@@ -1,0 +1,8 @@
+*
+!*.*
+!*/
+
+*.dSYM
+*.out
+apue.3e
+.vscode

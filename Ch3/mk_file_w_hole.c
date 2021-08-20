@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+
 #define	FILE_MODE	(S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
 
 char buf1[] = "abcdefghij";
