@@ -12,7 +12,7 @@ void set_fl(int fd, int flags) /* flags are file status flags to turn on */
         { fprintf(stderr, "fcntl F_SETFL error"); exit(1); }
 }
 
-void crl_fl(int fd, int flags) /* flags are file status flags to turn on */
+void clr_fl(int fd, int flags) /* flags are file status flags to turn off */
 {
     int val;
     if ((val = fcntl(fd, F_GETFL, 0)) < 0)
