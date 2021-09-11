@@ -6,3 +6,4 @@
 *.out
 apue.3e
 .vscode
+.DS_Store
