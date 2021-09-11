@@ -1,5 +1,5 @@
 #include <iostream>
-#include <cstdarg>
+#include <bitset>
 
 bool allDiff(int a, int b, int c, int d, int e, int f, int g, int h) {
     uint16_t mask = 0;
@@ -32,6 +32,18 @@ int add(int a, int b) {
     return a;
 }
 
+void LFSR() {
+    u_int32_t lfsr[4] = {0x00000001,0,0,0x80000000}; //4*32 = 128 bit reg
+    for (;;) {
+        printf("%x", lfsr[0] & 1);
+        u_int32_t bit = (lfsr[0] ^ (lfsr[0] >> 1) ^ (lfsr[0] >> 2) ^ (lfsr[0] >> 7)) & 1;
+        lfsr[0] = (lfsr[0] >> 1) | (lfsr[1] << 31);
+        lfsr[1] = (lfsr[1] >> 1) | (lfsr[2] << 31);
+        lfsr[2] = (lfsr[2] >> 1) | (lfsr[3] << 31);
+        lfsr[3] = (lfsr[3] >> 1) | (bit << 31);
+    }
+}
+
 int main() {
     /* for (int s=1; s<10; s++)
     for (int e=0; e<10; e++)
@@ -49,5 +61,8 @@ int main() {
             std::cout << send << " + " << more << " = " << money << std::endl;
     } */
 
-    std::cout << add(0,134) << '\n';
+    // std::cout << add(0,134) << '\n';
+
+    LFSR();
+
 }
