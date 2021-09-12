@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
     inet_aton(argv[1], &(addr.sin_addr)); // set address to localhost
 
     int yes=1;
-    if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *) &yes, sizeof(int)) < 0) perror("setsockopt"); // setsockopt to reuse port
+    if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *) &yes, sizeof(int)) < 0) perror("setsockopt"); // setsockopt for no delay
 
     if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("connect"); exit(1); } // connect
 

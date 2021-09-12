@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <sys/poll.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include "worker.h"
 
 #define BUFFSIZE 4096
@@ -17,8 +18,8 @@ int main() {
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons(8080); // port 8080
 
-    int reuse = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(int)) < 0) perror("setsockopt"); // setsockopt to reuse port
+    int yes = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) < 0) perror("setsockopt"); // setsockopt to reuse port
     if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) perror("bind"); // bind
     if (listen(server_fd, 4) < 0) perror("listen"); // listen
 
@@ -47,6 +48,8 @@ int main() {
         if (fds[0].revents & POLLIN) {
             int sock = accept(server_fd, NULL, NULL); // accept new socket
             if (sock < 0) perror("accept");
+
+            if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *) &yes, sizeof(int)) < 0) perror("setsockopt"); // setsockopt for no delay
             
             if (nfd < MAX_CONN+1) { // check connections.
                 fds[nfd].fd = sock;
