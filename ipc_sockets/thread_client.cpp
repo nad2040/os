@@ -57,8 +57,11 @@ int main(int argc, char *argv[]) {
             if (fds[0].revents & POLLIN) {
                 if ((n = read(fd, rsp, BUFFSIZE)) < 0) { perror("read"); exit(1); }
                 else if (n == 0) { printf("connection to server dropped\n"); exit(1); }
-                if (strcmp(rsp+n-5, "done")==0) break;
-                write(STDOUT_FILENO, rsp, n);
+                if (strcmp(rsp+n-5, "done")==0) {
+                    memset((rsp+n-5),0,4);
+                    write(STDOUT_FILENO, rsp, n);
+                    break;
+                }
             } else break;
         }
     }

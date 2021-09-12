@@ -14,6 +14,7 @@ int main() {
 
     struct sockaddr_in addr = { 0 };
     addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons(8080); // port 8080
 
     int reuse = 1;
