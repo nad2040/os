@@ -4,19 +4,23 @@
 #include <sys/socket.h>
 #include <sys/poll.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include "requests.h"
 
 #define BUFFSIZE 4096
 
 int menu() {
-    printf("\n0. HELLO\n");
-    printf("1. WIFI\n");
-    printf("2. CALENDAR\n");
-    printf("3. DATETIME\n");
-    printf("4. FORTUNE\n");
-    printf("5. QUIT\n");
-    int choice;
-    scanf("%d", &choice);
+    int choice = -1;
+    while (choice < 0 || choice > 5) {
+        printf("\n0. HELLO\n");
+        printf("1. WIFI\n");
+        printf("2. CALENDAR\n");
+        printf("3. DATETIME\n");
+        printf("4. FORTUNE\n");
+        printf("5. QUIT\n");
+        scanf("%d", &choice);
+        if (choice < 0 || choice > 5) printf("Choose correctly!\n");
+    }
     return choice;
 }
 
@@ -30,6 +34,9 @@ int main(int argc, char *argv[]) {
     addr.sin_family = AF_INET;
     addr.sin_port = htons(atoi(argv[2])); // port 8080
     inet_aton(argv[1], &(addr.sin_addr)); // set address to localhost
+
+    int yes=1;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *) &yes, sizeof(int)) < 0) perror("setsockopt"); // setsockopt to reuse port
 
     if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("connect"); exit(1); } // connect
 
