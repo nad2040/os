@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "requests.h"
 
 #define BUFFSIZE 4096
 int main(int argc, char *argv[]) {
