@@ -62,6 +62,7 @@ int main(int argc, char *argv[]) {
                     write(STDOUT_FILENO, rsp, n);
                     break;
                 }
+                write(STDOUT_FILENO, rsp, n);
             } else break;
         }
     }
