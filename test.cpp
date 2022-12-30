@@ -1,34 +1,23 @@
-#define _GNU_SOURCE
-#include <thread>
 #include <iostream>
+#include <vector>
+#include <thread>
+#include <chrono>
 
-#include <pthread.h>
-#include <stdlib.h>
-#include <errno.h>
-
-void getTime() {
-    std::cout << "time" << '\n';
+void proc(void)
+{
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(5s);
 }
 
-int main() {
-    std::thread t[4];
-
-    //may return 0 when not able to detect
-    const auto processor_count = std::thread::hardware_concurrency();
-    std::cout << processor_count << '\n';
-
-    cpu_set_t cpuset;
-
-    for (int i=0; i<4; ++i) {
-        t[i] = std::thread(getTime);
-        CPU_ZERO(&cpuset);
-        CPU_SET(i, &cpuset);
-        int s = pthread_setaffinity_np(t[i], sizeof(cpuset), &cpuset);
-        if (s != 0) perror("setaffinity");
+int main()
+{
+    std::vector<std::thread> threads;
+    for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i)
+    {
+        threads.emplace_back();
     }
 
-    for (int i=0; i<4; ++i) {
-        t[i].join();
-    }
+    for (auto& t : threads)
+        t.join();
 }
 

@@ -1,0 +1,98 @@
+Accepted socket fd: 4
+pfd:3 fd:4 events:1 revents:1 
+got request 1234:0 from fd: 4 in thread:0x7000005c6000
+length of line is 10
+wrote 15 bytes
+length of line is 10
+wrote 15 bytes
+length of line is 10
+wrote 15 bytes
+length of line is 17
+wrote 22 bytes
+length of line is 25
+wrote 30 bytes
+length of line is 29
+wrote 34 bytes
+length of line is 26
+wrote 31 bytes
+length of line is 26
+wrote 31 bytes
+pfd:3 fd:4 events:1 revents:1 
+got request 1234:1 from fd: 4 in thread:0x7000005c6000
+length of line is 100
+wrote 105 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 74
+wrote 79 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 106
+wrote 111 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 106
+wrote 111 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 75
+wrote 80 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 92
+wrote 97 bytes
+length of line is 89
+wrote 94 bytes
+length of line is 89
+wrote 94 bytes
+pfd:3 fd:4 events:1 revents:1 
+got request 1234:2 from fd: 4 in thread:0x7000005c6000
+length of line is 67
+wrote 72 bytes
+length of line is 67
+wrote 72 bytes
+length of line is 67
+wrote 72 bytes
+length of line is 67
+wrote 72 bytes
+length of line is 71
+wrote 76 bytes
+length of line is 67
+wrote 72 bytes
+length of line is 67
+wrote 72 bytes
+length of line is 67
+wrote 72 bytes
+pfd:3 fd:4 events:1 revents:1 
+got request 1234:3 from fd: 4 in thread:0x7000005c6000
+length of line is 29
+wrote 34 bytes
+pfd:3 fd:4 events:1 revents:1 
+got request 1234:4 from fd: 4 in thread:0x7000005c6000
+length of line is 37
+wrote 42 bytes
+length of line is 53

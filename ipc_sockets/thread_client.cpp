@@ -1,11 +1,13 @@
 #include <cstdio>
 #include <cstring>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/poll.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include "requests.h"
+#include <cassert>
 
 #define BUFFSIZE 4096
 
@@ -41,37 +43,59 @@ int main(int argc, char *argv[]) {
     if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("connect"); exit(1); } // connect
 
     // MESSAGE Request
-    char msg[BUFFSIZE], rsp[BUFFSIZE];
+    char rsp[BUFFSIZE];
     Request req;
 
     const uint16_t magic = 1234;
     req.magic = magic;
     req.fd = fd;
 
-    int n;
-
+    // POLL
     struct pollfd fds[1];
     fds[0].fd = fd;
     fds[0].events = POLLIN;
+
+    // LOOP
     while (1) {
+        // SEND
         req.reqtype = menu();
         printf("you chose %d\n\n", req.reqtype);
         if (req.reqtype == 5) {exit(1);}
         if (write(fd, (char*)&req, sizeof(req)) < 0) { perror("send fail"); exit(1); }
         
+        // RECEIVE
         while(1) {
             int rc = poll(fds, 1, 10000);
             if (fds[0].revents & POLLIN) {
-                if ((n = read(fd, rsp, BUFFSIZE)) < 0) { perror("read"); exit(1); }
-                else if (n == 0) { printf("connection to server dropped\n"); exit(1); }
-                if (strcmp(rsp+n-5, "done")==0) {
-                    memset((rsp+n-5),0,4);
-                    write(STDOUT_FILENO, rsp, n);
-                    break;
+                bool endReached = false; // flag for receiving ending length 0 header
+                int remaining = 0;
+                int n;
+                while ((n = read(fd, rsp+remaining, BUFFSIZE-remaining)) > 0) { // read as much work into buffer
+                    char *curpos = rsp; // every read, move pointer to beginning to start consumption
+                    remaining += n; // count the bytes received
+
+                    // printf("received %d bytes\n", n);
+                    // printf("remaining: %d bytes\n", remaining);
+
+                    while (remaining >= 4 && remaining >= *(int*)curpos + sizeof(int)) { // there is full message left in the buffer
+                        int len = *(int*)curpos; // read the length header
+                        if (len == 0) { // received ending length 0 header. TODO: increase complexity with a better header.
+                            endReached = true; break;
+                        }
+                        // printf("len is %d\n", len);
+
+                        write(STDOUT_FILENO, curpos+4, len); // write message
+
+                        curpos += sizeof(int) + len; // increment offset
+                        remaining -= sizeof(int) + len; // decrement remaining bytes
+                    }
+                    if (endReached) break;
+                    memmove(rsp, curpos, remaining); // move remaining cutoff bytes to the beginning and go read again for more work to consume
                 }
-                write(STDOUT_FILENO, rsp, n);
-            } else break;
+                if (n == 0) { printf("connection to server dropped\n"); exit(1); } // error checking on read
+                else if (n < 0) { perror("read"); exit(1); } // error checking on read
+                break; // reading done
+            }
         }
     }
-    // close(fd);
 }

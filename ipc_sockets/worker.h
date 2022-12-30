@@ -30,7 +30,7 @@ public:
 
 private:
     void handle_event(const Request& req) {
-        std::cout << "got request " << req.magic << ':' << req.reqtype << " from fd: " << req.fd << " in thread:" << std::this_thread::get_id() << std::endl;
+        std::cout << "Request:  Key: " << req.magic << ", Type: " << req.reqtype << ", FD: " << req.fd << ", Thread: " << std::this_thread::get_id() << std::endl;
 
         switch (req.reqtype) {
             case HELLO: processRequest("cowsay hello", req.fd); break;
@@ -39,17 +39,22 @@ private:
             case DATE: processRequest("date", req.fd); break;
             case FORTUNE: processRequest("fortune", req.fd); break;
         }
-
     }
 
     void processRequest(const char *command, int fd) {
         FILE* fs = popen(command, "r");
-        char buf[4096];
-        memset(buf, 0, sizeof(buf));
-        while (fgets(buf, sizeof(buf), fs) != NULL) {
-            write(fd, buf, strlen(buf));
+        char buf[4096] = {0};
+        int *len = (int*)buf;
+        int sum=0;
+        while (fgets(buf+sizeof(int), sizeof(buf)-sizeof(int), fs) != NULL) {
+            *len = strlen(buf+4);
+            int n = write(fd, buf, sizeof(int)+(*len));
+            sum += n;
         }
-        write(fd, "done\0", 5);
+        *len = 0;
+        write(fd, buf, sizeof(int));
+        sum += sizeof(int);
+        printf("Response: %d bytes\n", sum);
     }
     std::queue<Request> wq;
     std::thread wthread;
