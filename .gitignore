@@ -2,6 +2,8 @@
 !*.*
 !*/
 
+*/bin/*
+*/build/*
 *.dSYM
 *.out
 apue.3e

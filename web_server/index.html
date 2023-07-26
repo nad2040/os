@@ -3,11 +3,16 @@
 <html lang="UTF-8">
     <head>
         <title>Web Server</title>
+        <script src="https://unpkg.com/htmx.org@1.9.3"></script>
     </head>
     <body>
         <h1>Web Server</h1>
         <p>This is a web server running with C.</p>
         <a href="a">page a link</a>
         <a href="b">page b link</a>
+        <a href="aboutme">About Me</a>
+        <button hx-get="/a" hx-swap="outerHTML">
+            Click Me to go to a
+        </button>
     </body>
 </html>

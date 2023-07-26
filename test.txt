@@ -1,0 +1,7 @@
+HeLlO WoRlD!
+THiS Is a tEsT FiLe fOr mMaP
+                ThIs sHoUlD Be iNdEnTeD HoPeFuLlY WiTh sPaCeS AnD NoT TaBs
+
+    AnOtHeR TeSt lInE
+
+END

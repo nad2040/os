@@ -84,6 +84,7 @@ int main() {
     HashTable *routes = make_hash_table(20, &hash_str, &cmp_str, NULL);
     hash_table_set(routes, "/", "index.html");
     hash_table_set(routes, "/a", "a.html");
+    hash_table_set(routes, "/aboutme", "aboutme.html");
     hash_table_set(routes, "/b", "b.html");
 
     while (1) { // accept loop
