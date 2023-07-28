@@ -5,10 +5,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-typedef void (*module_t)(void);
+typedef void *module_t;
+typedef void (*function_t)();
 typedef struct {
     module_t module;
-    void *function;
+    function_t function;
 } hot_loader_t;
 hot_loader_t load_function(const char *, const char *);
 
