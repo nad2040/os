@@ -1,0 +1,253 @@
+#include <errno.h>
+#include <getopt.h>
+#include <ctype.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "dynarr.h"
+// create command struct
+DYNARR(cmd_t, char *);
+// create pipeline of commands.
+DYNARR(pipeline_t, cmd_t *);
+
+// dynamic array for the n-1 pipes
+DYNARR(pipes_t, int *);
+#define READ_END 0
+#define WRITE_END 1
+
+// dynamic array for child pids
+DYNARR(pids_t, pid_t);
+
+#define PROMPT "sish$"
+
+typedef struct {
+	pid_t current_pid;
+	int last_exit_status;
+} shell_state_t;
+
+shell_state_t shell_state = { 0 };
+
+volatile sig_atomic_t interrupted = false;
+void
+sighandler(int signum)
+{
+	interrupted = true;
+}
+
+const char *redirects[3] = { "<", ">", ">>" };
+
+/**
+ * sets trailing whitespace to null bytes and
+ * returns pointer to first non-whitespace char.
+ * do not lose original pointer when freeing.
+ */
+char *
+strip(char *string)
+{
+	char *begin = string;
+	char *end = string + strlen(string) - 1;
+	while (isspace(*begin))
+		begin++;
+	while (isspace(*end)) {
+		*end = '\0';
+		end--;
+	}
+	return begin;
+}
+
+void
+display_pipeline(pipeline_t *pipeline)
+{
+	for (int i = 0; i < pipeline->size; ++i) {
+		cmd_t *cmd = pipeline->data[i];
+		printf("+ ");
+		for (int j = 0; j < cmd->size; ++j) {
+			char *arg = cmd->data[j];
+			printf("%s ", arg);
+		}
+	}
+}
+
+pipeline_t *
+parse_commands(char *line)
+{
+	char *stripped_line = strip(line);
+
+	// tokenize - using dynamic array
+	DYNARR_INIT(pipeline_t, pipeline);
+
+	char *command, *arg;
+	while ((command = strsep(&stripped_line, "|"))) {
+		command = strdup(command);
+		char *stripped_cmd = strip(command);
+
+		DYNARR_INIT(cmd_t, cmd);
+		while ((arg = strsep(&stripped_cmd, " \t"))) {
+			arg = strdup(arg);
+			dynarr_append(cmd, arg);
+		}
+		dynarr_append(pipeline, cmd);
+
+		free(command);
+	}
+	return pipeline;
+}
+
+void
+run_commands(pipeline_t *cmds)
+{
+	// 1. create all n-1 pipes
+	// 2. for each command, fork
+	// 3. detect redirects and background.
+	// 4. set all redirects
+	// 5. then set all pipes
+	// 6. exec
+
+	DYNARR_INIT(pipes_t, pipes);
+	for (int i = 0; i < cmds->size - 1; ++i) {
+		int *new_pipe = malloc(sizeof(int[2]));
+		if (new_pipe == NULL) {
+			fprintf(stderr, "couldn't init pipe #%d\n", i + 1);
+			exit(EXIT_FAILURE);
+		}
+		pipe(new_pipe); // TODO: Check return
+		dynarr_append(pipes, new_pipe);
+	}
+
+	DYNARR_INIT(pids_t, cpids);
+	for (int i = 0; i < cmds->size; ++i) {
+		// fork
+		pid_t pid = fork();
+		if (pid < 0) {
+			fprintf(stderr, "couldn't fork %s", strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		else if (pid > 0) { // parent
+			dynarr_append(cpids, pid);
+			continue;
+		}
+
+		// pid == 0 (child)
+
+		cmd_t *cmd = cmds->data[i];
+
+		// redirects
+		int j = 0;
+		while (j < cmd->size) {
+			char *redir_filename = NULL;
+			int k;
+			for (k = 0; k < 3; ++k){
+				if (strcmp(cmd->data[j], redirects[k]) == 0) {
+					free(cmd->data[j]);
+					dynarr_pop(cmd, j);
+					redir_filename = cmd->data[j];
+					dynarr_pop(cmd, j);
+					break;
+				}
+				else if (strncmp(cmd->data[j], redirects[k], strlen(redirects[k])) == 0) {
+					redir_filename = strdup(cmd->data[j] + strlen(redirects[k]));
+					free(cmd->data[j]);
+					dynarr_pop(cmd, j);
+					break;
+				}
+			}
+			const char *redirect = redirects[k];
+			// TODO: handle the redirect types
+
+		}
+
+		// pipes
+		// TODO: check close and dup2 return value
+		if (i != cmds->size - 1) {
+			close(pipes->data[i][READ_END]);
+			dup2(pipes->data[i][WRITE_END], STDOUT_FILENO);
+		}
+		if (i != 0) {
+			close(pipes->data[i-1][WRITE_END]);
+			dup2(pipes->data[i-1][READ_END], STDIN_FILENO);
+		}
+
+		// TODO: exec
+
+	}
+}
+
+int
+main(int argc, char **argv)
+{
+	shell_state.current_pid = getpid();
+
+	bool x_flag = false;
+	bool c_flag = false;
+	char *c_flag_script = NULL;
+	int c;
+
+	opterr = 0;
+
+	while ((c = getopt(argc, argv, "xc:")) != -1)
+		switch (c) {
+		case 'x':
+			x_flag = true;
+			break;
+		case 'c':
+			c_flag_script = optarg;
+			break;
+		case '?':
+			if (optopt == 'c')
+				fprintf(stderr,
+					"Option -%c requires an argument.\n",
+					optopt);
+			else if (isprint(optopt))
+				fprintf(stderr, "Unknown option `-%c'.\n",
+					optopt);
+			else
+				fprintf(stderr,
+					"Unknown option character `\\x%x'.\n",
+					optopt);
+			return 1;
+		default:
+			exit(EXIT_FAILURE);
+		}
+
+	printf("xflag: %d", x_flag);
+	printf("cflag: %d", c_flag);
+	printf("cflag_string: %s", c_flag_script);
+
+	struct sigaction action = { .sa_handler = sighandler };
+	sigaction(SIGINT, &action, NULL); // TODO: Check return
+	sigaction(SIGQUIT, &action, NULL);
+	sigaction(SIGTSTP, &action, NULL);
+
+	if (c_flag) {
+		pipeline_t *pipeline = parse_commands(c_flag_script);
+		run_commands(pipeline);
+		return 0;
+	}
+
+	char *line;
+	size_t len = 0;
+	while (1) {
+		line = NULL;
+		printf(PROMPT " ");
+		int nread = getline(&line, &len,
+				    stdin); // TODO: Maybe stop ctrl-D and only
+					    // allow `quit` as exit method
+		if (nread == -1) {
+			if (interrupted) {
+				printf("\n");
+				interrupted = false;
+				continue;
+			}
+			break;
+		}
+		pipeline_t *pipeline = parse_commands(c_flag_script);
+		run_commands(pipeline);
+
+		free(line);
+	}
+	return 0;
+}
