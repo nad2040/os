@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <errno.h>
 
+#define MEM_SIZE 32768
+
 char read_input() {
     char c;
     int chars = fread(&c,1,1,stdin);
@@ -16,7 +18,7 @@ char read_input() {
 void left_bracket(char *program, char *memory, char **ip_ptr, char *data) {
     if (*data == 0) {
         int count = 0;
-        while (*ip_ptr < program + 1000) {
+        while (*ip_ptr < program + MEM_SIZE) {
             if (**ip_ptr == '[') ++count;
             else if (**ip_ptr == ']') --count;
             if (count == 0) break;
@@ -57,14 +59,14 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    char *program = calloc(1000,sizeof(char));
-    int numchars = read(prog, program, 1000);
+    char *program = calloc(MEM_SIZE, sizeof(char));
+    int numchars = read(prog, program, MEM_SIZE);
     if (numchars < 0) {
         perror("Couldn't read file for reading");
         exit(1);
     }
 
-    char *memory = calloc(1000,sizeof(char));
+    char *memory = calloc(MEM_SIZE, sizeof(char));
 
     char *IP = program;
     char *data = memory;
@@ -77,10 +79,10 @@ int main(int argc, char *argv[]) {
             case ']': right_bracket(program, memory, &IP, data);
             break;
             case '<': --data;
-                if (data == memory - 1) data += 1000;
+                if (data == memory - 1) data += MEM_SIZE;
             break;
             case '>': ++data;
-                if (data == memory + 1000) data -= 1000;
+                if (data == memory + 1000) data -= MEM_SIZE;
             break;
             case '+': ++(*data);
             break;
