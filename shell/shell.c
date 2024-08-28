@@ -7,6 +7,9 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "dynarr.h"
 // create command struct
@@ -38,7 +41,7 @@ sighandler(int signum)
 	interrupted = true;
 }
 
-const char *redirects[3] = { "<", ">", ">>" };
+const char *redirects[3] = { "<", ">>", ">" };
 
 /**
  * sets trailing whitespace to null bytes and
@@ -50,9 +53,9 @@ strip(char *string)
 {
 	char *begin = string;
 	char *end = string + strlen(string) - 1;
-	while (isspace(*begin))
+	while (isspace((int)*begin))
 		begin++;
-	while (isspace(*end)) {
+	while (isspace((int)*end)) {
 		*end = '\0';
 		end--;
 	}
@@ -69,6 +72,7 @@ display_pipeline(pipeline_t *pipeline)
 			char *arg = cmd->data[j];
 			printf("%s ", arg);
 		}
+		printf("\n");
 	}
 }
 
@@ -76,6 +80,10 @@ pipeline_t *
 parse_commands(char *line)
 {
 	char *stripped_line = strip(line);
+
+	if (strcmp(stripped_line, "") == 0) {
+		return NULL;
+	}
 
 	// tokenize - using dynamic array
 	DYNARR_INIT(pipeline_t, pipeline);
@@ -107,6 +115,10 @@ run_commands(pipeline_t *cmds)
 	// 5. then set all pipes
 	// 6. exec
 
+	if (cmds == NULL) {
+		return;
+	}
+
 	DYNARR_INIT(pipes_t, pipes);
 	for (int i = 0; i < cmds->size - 1; ++i) {
 		int *new_pipe = malloc(sizeof(int[2]));
@@ -123,7 +135,7 @@ run_commands(pipeline_t *cmds)
 		// fork
 		pid_t pid = fork();
 		if (pid < 0) {
-			fprintf(stderr, "couldn't fork %s", strerror(errno));
+			fprintf(stderr, "couldn't fork %s\n", strerror(errno));
 			exit(EXIT_FAILURE);
 		}
 		else if (pid > 0) { // parent
@@ -133,14 +145,17 @@ run_commands(pipeline_t *cmds)
 
 		// pid == 0 (child)
 
+		display_pipeline(cmds);
+
 		cmd_t *cmd = cmds->data[i];
 
 		// redirects
+		// printf("redirects\n");
 		int j = 0;
 		while (j < cmd->size) {
 			char *redir_filename = NULL;
 			int k;
-			for (k = 0; k < 3; ++k){
+			for (k = 0; k < 3; ++k) {
 				if (strcmp(cmd->data[j], redirects[k]) == 0) {
 					free(cmd->data[j]);
 					dynarr_pop(cmd, j);
@@ -148,31 +163,70 @@ run_commands(pipeline_t *cmds)
 					dynarr_pop(cmd, j);
 					break;
 				}
-				else if (strncmp(cmd->data[j], redirects[k], strlen(redirects[k])) == 0) {
-					redir_filename = strdup(cmd->data[j] + strlen(redirects[k]));
+				else if (strncmp(cmd->data[j], redirects[k],
+						 strlen(redirects[k]))
+					 == 0) {
+					redir_filename
+					    = strdup(cmd->data[j]
+						     + strlen(redirects[k]));
 					free(cmd->data[j]);
 					dynarr_pop(cmd, j);
 					break;
 				}
 			}
+			if (redir_filename == NULL) {
+				j++;
+				continue;
+			}
 			const char *redirect = redirects[k];
-			// TODO: handle the redirect types
-
+			// TODO: handle the redirect types and CHECK FD RETURN VALUE
+			if (strcmp(redirect, ">") == 0) {
+				int out_fd = open(redir_filename, O_WRONLY | O_CREAT | O_TRUNC);
+				dup2(out_fd, STDOUT_FILENO);
+			}
+			else if (strcmp(redirect, ">>") == 0) {
+				int out_fd = open(redir_filename, O_WRONLY | O_CREAT);
+				// off_t offset = lseek(out_fd, 0, SEEK_END);
+				lseek(out_fd, 0, SEEK_END);
+				dup2(out_fd, STDOUT_FILENO);
+			}
+			else if (strcmp(redirect, "<") == 0) {
+				int in_fd = open(redir_filename, O_RDONLY);
+				dup2(in_fd, STDIN_FILENO);
+			}
+			free(redir_filename);
 		}
 
 		// pipes
 		// TODO: check close and dup2 return value
 		if (i != cmds->size - 1) {
-			close(pipes->data[i][READ_END]);
 			dup2(pipes->data[i][WRITE_END], STDOUT_FILENO);
 		}
 		if (i != 0) {
-			close(pipes->data[i-1][WRITE_END]);
-			dup2(pipes->data[i-1][READ_END], STDIN_FILENO);
+			dup2(pipes->data[i - 1][READ_END], STDIN_FILENO);
+		}
+		for (int k = 0; k < cmds->size - 1; ++k) {
+			if (k != i) {
+				close(pipes->data[k][WRITE_END]);
+			}
+			if (k != i-1) {
+				close(pipes->data[k][READ_END]);
+			}
 		}
 
-		// TODO: exec
+		// exec
+		// printf("exec\n");
+		// TODO: exec impl. need special cases for builtins!
+		execvp(cmd->data[0], cmd->data);
+		fprintf(stderr, "couldn't exec: %s\n", strerror(errno));
+		exit(EXIT_FAILURE);
+	}
 
+	// wait for children
+	int status;
+	for (int i = 0; i < cpids->size; ++i) {
+		// pid_t pid = waitpid(cpids->data[i], &status, 0);
+		waitpid(cpids->data[i], &status, 0);
 	}
 }
 
@@ -244,7 +298,7 @@ main(int argc, char **argv)
 			}
 			break;
 		}
-		pipeline_t *pipeline = parse_commands(c_flag_script);
+		pipeline_t *pipeline = parse_commands(line);
 		run_commands(pipeline);
 
 		free(line);
