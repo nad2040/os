@@ -53,9 +53,9 @@ strip(char *string)
 {
 	char *begin = string;
 	char *end = string + strlen(string) - 1;
-	while (isspace((int)*begin))
+	while (isspace((int) *begin))
 		begin++;
-	while (isspace((int)*end)) {
+	while (isspace((int) *end)) {
 		*end = '\0';
 		end--;
 	}
@@ -81,9 +81,7 @@ parse_commands(char *line)
 {
 	char *stripped_line = strip(line);
 
-	if (strcmp(stripped_line, "") == 0) {
-		return NULL;
-	}
+	if (strcmp(stripped_line, "") == 0) { return NULL; }
 
 	// tokenize - using dynamic array
 	DYNARR_INIT(pipeline_t, pipeline);
@@ -115,9 +113,7 @@ run_commands(pipeline_t *cmds)
 	// 5. then set all pipes
 	// 6. exec
 
-	if (cmds == NULL) {
-		return;
-	}
+	if (cmds == NULL) { return; }
 
 	DYNARR_INIT(pipes_t, pipes);
 	for (int i = 0; i < cmds->size - 1; ++i) {
@@ -144,8 +140,6 @@ run_commands(pipeline_t *cmds)
 		}
 
 		// pid == 0 (child)
-
-		display_pipeline(cmds);
 
 		cmd_t *cmd = cmds->data[i];
 
@@ -179,13 +173,17 @@ run_commands(pipeline_t *cmds)
 				continue;
 			}
 			const char *redirect = redirects[k];
-			// TODO: handle the redirect types and CHECK FD RETURN VALUE
+			// TODO: handle the redirect types and CHECK FD RETURN
+			// VALUE
 			if (strcmp(redirect, ">") == 0) {
-				int out_fd = open(redir_filename, O_WRONLY | O_CREAT | O_TRUNC);
+				int out_fd
+				    = open(redir_filename,
+					   O_WRONLY | O_CREAT | O_TRUNC);
 				dup2(out_fd, STDOUT_FILENO);
 			}
 			else if (strcmp(redirect, ">>") == 0) {
-				int out_fd = open(redir_filename, O_WRONLY | O_CREAT);
+				int out_fd
+				    = open(redir_filename, O_WRONLY | O_CREAT);
 				// off_t offset = lseek(out_fd, 0, SEEK_END);
 				lseek(out_fd, 0, SEEK_END);
 				dup2(out_fd, STDOUT_FILENO);
@@ -198,35 +196,55 @@ run_commands(pipeline_t *cmds)
 		}
 
 		// pipes
+		// close all other pipe ends
 		// TODO: check close and dup2 return value
+		for (int p = 0; p < cmds->size - 1; ++p) {
+			// printf("proc %d: pipe %d\n", i, p);
+			if (p != i) {
+				// printf("for proc %d: closed W%d\n", i, p);
+				close(pipes->data[p][WRITE_END]);
+			}
+			if (p != i - 1) {
+				// printf("for proc %d: closed R%d\n", i, p);
+				close(pipes->data[p][READ_END]);
+			}
+		}
+		// pipe redirects for current proc i
 		if (i != cmds->size - 1) {
+			// printf("for proc %d: WRITE_END of pipe %d is now "
+			       // "pointed to by STDOUT_FILENO\n",
+			       // i, i);
 			dup2(pipes->data[i][WRITE_END], STDOUT_FILENO);
 		}
 		if (i != 0) {
+			// printf("for proc %d: READ_END of pipe %d is now "
+			//        "pointed to by STDIN_FILENO\n",
+			//        i, i - 1);
 			dup2(pipes->data[i - 1][READ_END], STDIN_FILENO);
-		}
-		for (int k = 0; k < cmds->size - 1; ++k) {
-			if (k != i) {
-				close(pipes->data[k][WRITE_END]);
-			}
-			if (k != i-1) {
-				close(pipes->data[k][READ_END]);
-			}
 		}
 
 		// exec
 		// printf("exec\n");
 		// TODO: exec impl. need special cases for builtins!
 		execvp(cmd->data[0], cmd->data);
-		fprintf(stderr, "couldn't exec: %s\n", strerror(errno));
+		fprintf(stderr, "exec failed: %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 
+	// close all pipes in parent
+	for (int i = 0; i < pipes->size; ++i) {
+		close(pipes->data[i][READ_END]);
+		close(pipes->data[i][WRITE_END]);
+	}
+
 	// wait for children
+	// printf("waiting for children\n");
 	int status;
 	for (int i = 0; i < cpids->size; ++i) {
-		// pid_t pid = waitpid(cpids->data[i], &status, 0);
-		waitpid(cpids->data[i], &status, 0);
+		pid_t pid;
+		// printf("waiting for child %d\n", cpids->data[i]);
+		while ((pid = waitpid(cpids->data[i], &status, 0))
+		       != cpids->data[i]);
 	}
 }
 
@@ -267,9 +285,9 @@ main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 
-	printf("xflag: %d", x_flag);
-	printf("cflag: %d", c_flag);
-	printf("cflag_string: %s", c_flag_script);
+	printf("xflag: %d ", x_flag);
+	printf("cflag: %d ", c_flag);
+	printf("cflag_string: %s\n", c_flag_script);
 
 	struct sigaction action = { .sa_handler = sighandler };
 	sigaction(SIGINT, &action, NULL); // TODO: Check return
