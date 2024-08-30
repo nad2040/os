@@ -8,28 +8,46 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
 #include "dynarr.h"
+
+// https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_09_02
+
 // create command struct
-DYNARR(cmd_t, char *);
-// create pipeline of commands.
-DYNARR(pipeline_t, cmd_t *);
+DYNARR(command_t, char *);
+
+// create pipeline of commands
+DYNARR(pipeline_t, command_t *);
+
+// not implementing AND-OR list
+
+// async tagged pipeline
+typedef struct {
+	pipeline_t *p;
+	bool async;
+} apipeline_t;
+
+// create async list of async tagged pipelines
+DYNARR(asynclist_t, apipeline_t *);
 
 // dynamic array for the n-1 pipes
 DYNARR(pipes_t, int *);
 #define READ_END 0
 #define WRITE_END 1
 
-// dynamic array for child pids
+// dynamic array for child pids and background pids.
 DYNARR(pids_t, pid_t);
 
 #define PROMPT "sish$"
 
 typedef struct {
+	pids_t background_jobs;
 	pid_t current_pid;
-	int last_exit_status;
+	char last_exit_status;
+	bool display_cmds;
 } shell_state_t;
 
 shell_state_t shell_state = { 0 };
@@ -66,7 +84,7 @@ void
 display_pipeline(pipeline_t *pipeline)
 {
 	for (int i = 0; i < pipeline->size; ++i) {
-		cmd_t *cmd = pipeline->data[i];
+		command_t *cmd = pipeline->data[i];
 		printf("+ ");
 		for (int j = 0; j < cmd->size; ++j) {
 			char *arg = cmd->data[j];
@@ -76,44 +94,68 @@ display_pipeline(pipeline_t *pipeline)
 	}
 }
 
-pipeline_t *
+asynclist_t *
 parse_commands(char *line)
 {
 	char *stripped_line = strip(line);
 
 	if (strcmp(stripped_line, "") == 0) { return NULL; }
 
-	// tokenize - using dynamic array
-	DYNARR_INIT(pipeline_t, pipeline);
+	DYNARR_INIT(asynclist_t, async_pipeline_list);
 
-	char *command, *arg;
-	while ((command = strsep(&stripped_line, "|"))) {
-		command = strdup(command);
-		char *stripped_cmd = strip(command);
+	char *pipeline_str;
+	while ((pipeline_str = strsep(&stripped_line, "&"))) {
+		pipeline_str = strdup(pipeline_str);
+		char *stripped_pipeline_str = strip(pipeline_str);
 
-		DYNARR_INIT(cmd_t, cmd);
-		while ((arg = strsep(&stripped_cmd, " \t"))) {
-			arg = strdup(arg);
-			dynarr_append(cmd, arg);
+		DYNARR_INIT(pipeline_t, pipeline);
+		char *command_str;
+		while ((command_str = strsep(&stripped_pipeline_str, "|"))) {
+			command_str = strdup(command_str);
+			char *stripped_cmd = strip(command_str);
+
+			DYNARR_INIT(command_t, command);
+			char *arg;
+			while ((arg = strsep(&stripped_cmd, " \t"))) {
+				arg = strdup(arg);
+				dynarr_append(command, arg);
+			}
+			dynarr_append(pipeline, command);
+
+			free(command_str);
 		}
-		dynarr_append(pipeline, cmd);
 
-		free(command);
+		free(pipeline_str);
+
+		apipeline_t *async_pipeline = malloc(sizeof(apipeline_t));
+		if (async_pipeline == NULL) {
+			fprintf(stderr, "couldn't create async tagged pipeline: %s\n", strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		*async_pipeline = { .p = pipeline, .async = };
+
+		dynarr_append(async_pipeline_list, async_pipeline);
+
 	}
-	return pipeline;
+	return async_pipeline_list;
 }
 
 void
-run_commands(pipeline_t *cmds)
+run_commands(pipeline_t *cmds, bool background, bool display_commands)
 {
 	// 1. create all n-1 pipes
 	// 2. for each command, fork
-	// 3. detect redirects and background.
-	// 4. set all redirects
-	// 5. then set all pipes
-	// 6. exec
+	// 3a. detect redirects
+	// 4a. set all redirects
+	// 5a. then set all pipes
+	// 6a. exec
+	// 3b. in parent, close all pipe ends
+	// 4b. wait for children
+	// 5b. wait for background jobs
 
 	if (cmds == NULL) { return; }
+
+	if (display_commands) display_pipeline(cmds);
 
 	DYNARR_INIT(pipes_t, pipes);
 	for (int i = 0; i < cmds->size - 1; ++i) {
@@ -131,7 +173,8 @@ run_commands(pipeline_t *cmds)
 		// fork
 		pid_t pid = fork();
 		if (pid < 0) {
-			fprintf(stderr, "couldn't fork %s\n", strerror(errno));
+			fprintf(stderr, "couldn't fork: %s\n",
+				strerror(errno));
 			exit(EXIT_FAILURE);
 		}
 		else if (pid > 0) { // parent
@@ -141,7 +184,7 @@ run_commands(pipeline_t *cmds)
 
 		// pid == 0 (child)
 
-		cmd_t *cmd = cmds->data[i];
+		command_t *cmd = cmds->data[i];
 
 		// redirects
 		// printf("redirects\n");
@@ -178,18 +221,19 @@ run_commands(pipeline_t *cmds)
 			if (strcmp(redirect, ">") == 0) {
 				int out_fd
 				    = open(redir_filename,
-					   O_WRONLY | O_CREAT | O_TRUNC);
+					   O_WRONLY | O_CREAT | O_TRUNC, 0666);
 				dup2(out_fd, STDOUT_FILENO);
 			}
 			else if (strcmp(redirect, ">>") == 0) {
-				int out_fd
-				    = open(redir_filename, O_WRONLY | O_CREAT);
+				int out_fd = open(redir_filename,
+						  O_WRONLY | O_CREAT, 0666);
 				// off_t offset = lseek(out_fd, 0, SEEK_END);
 				lseek(out_fd, 0, SEEK_END);
 				dup2(out_fd, STDOUT_FILENO);
 			}
 			else if (strcmp(redirect, "<") == 0) {
-				int in_fd = open(redir_filename, O_RDONLY);
+				int in_fd
+				    = open(redir_filename, O_RDONLY, 0666);
 				dup2(in_fd, STDIN_FILENO);
 			}
 			free(redir_filename);
@@ -212,8 +256,8 @@ run_commands(pipeline_t *cmds)
 		// pipe redirects for current proc i
 		if (i != cmds->size - 1) {
 			// printf("for proc %d: WRITE_END of pipe %d is now "
-			       // "pointed to by STDOUT_FILENO\n",
-			       // i, i);
+			// "pointed to by STDOUT_FILENO\n",
+			// i, i);
 			dup2(pipes->data[i][WRITE_END], STDOUT_FILENO);
 		}
 		if (i != 0) {
@@ -227,7 +271,7 @@ run_commands(pipeline_t *cmds)
 		// printf("exec\n");
 		// TODO: exec impl. need special cases for builtins!
 		execvp(cmd->data[0], cmd->data);
-		fprintf(stderr, "exec failed: %s\n", strerror(errno));
+		fprintf(stderr, "couldn't exec: %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 
@@ -244,29 +288,37 @@ run_commands(pipeline_t *cmds)
 		pid_t pid;
 		// printf("waiting for child %d\n", cpids->data[i]);
 		while ((pid = waitpid(cpids->data[i], &status, 0))
-		       != cpids->data[i]);
+		       != cpids->data[i])
+			;
+
+		shell_state.last_exit_status = (char) WEXITSTATUS(status);
 	}
+
+	// check for background processes by waiting, but don't hang
+	for (int i = 0; i < shell_state.background_jobs.size; ++i) {
+		pid_t waiting_for = shell_state.background_jobs.data[i];
+		pid_t got_it = waitpid(waiting_for, &status, WNOHANG);
+		if (got_it == waiting_for) {
+			printf("[%d] pid %d finished", i+1, got_it);
+		}
+	}
+
 }
 
-int
-main(int argc, char **argv)
+void
+argparse(int argc, char **argv, bool *x_flag, bool *c_flag,
+	 char **c_flag_script)
 {
-	shell_state.current_pid = getpid();
-
-	bool x_flag = false;
-	bool c_flag = false;
-	char *c_flag_script = NULL;
 	int c;
-
 	opterr = 0;
-
 	while ((c = getopt(argc, argv, "xc:")) != -1)
 		switch (c) {
 		case 'x':
-			x_flag = true;
+			*x_flag = true;
 			break;
 		case 'c':
-			c_flag_script = optarg;
+			*c_flag = true;
+			*c_flag_script = optarg;
 			break;
 		case '?':
 			if (optopt == 'c')
@@ -280,14 +332,25 @@ main(int argc, char **argv)
 				fprintf(stderr,
 					"Unknown option character `\\x%x'.\n",
 					optopt);
-			return 1;
 		default:
 			exit(EXIT_FAILURE);
 		}
+	// printf("xflag: %d ", *x_flag);
+	// printf("cflag: %d ", *c_flag);
+	// printf("cflag_string: %s\n", *c_flag_script);
+}
 
-	printf("xflag: %d ", x_flag);
-	printf("cflag: %d ", c_flag);
-	printf("cflag_string: %s\n", c_flag_script);
+int
+main(int argc, char **argv)
+{
+	bool x_flag = false;
+	bool c_flag = false;
+	char *c_flag_script = NULL;
+
+	argparse(argc, argv, &x_flag, &c_flag, &c_flag_script);
+
+	shell_state.display_cmds = x_flag;
+	shell_state.current_pid = getpid();
 
 	struct sigaction action = { .sa_handler = sighandler };
 	sigaction(SIGINT, &action, NULL); // TODO: Check return
@@ -296,7 +359,7 @@ main(int argc, char **argv)
 
 	if (c_flag) {
 		pipeline_t *pipeline = parse_commands(c_flag_script);
-		run_commands(pipeline);
+		run_commands(pipeline, shell_state.display_cmds);
 		return 0;
 	}
 
@@ -317,7 +380,7 @@ main(int argc, char **argv)
 			break;
 		}
 		pipeline_t *pipeline = parse_commands(line);
-		run_commands(pipeline);
+		run_commands(pipeline, shell_state.display_cmds);
 
 		free(line);
 	}
