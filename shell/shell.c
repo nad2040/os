@@ -31,7 +31,7 @@ typedef struct {
 } apipeline_t;
 
 // create async list of async tagged pipelines
-DYNARR(asynclist_t, apipeline_t *);
+DYNARR(asynclist_t, apipeline_t);
 
 // dynamic array for the n-1 pipes
 DYNARR(pipes_t, int *);
@@ -44,7 +44,7 @@ DYNARR(pids_t, pid_t);
 #define PROMPT "sish$"
 
 typedef struct {
-	pids_t background_jobs;
+	pids_t *background_jobs;
 	pid_t current_pid;
 	char last_exit_status;
 	bool display_cmds;
@@ -81,10 +81,10 @@ strip(char *string)
 }
 
 void
-display_pipeline(pipeline_t *pipeline)
+display_pipeline(pipeline_t pipeline)
 {
-	for (int i = 0; i < pipeline->size; ++i) {
-		command_t *cmd = pipeline->data[i];
+	for (int i = 0; i < pipeline.size; ++i) {
+		command_t *cmd = pipeline.data[i];
 		printf("+ ");
 		for (int j = 0; j < cmd->size; ++j) {
 			char *arg = cmd->data[j];
@@ -108,6 +108,11 @@ parse_commands(char *line)
 		pipeline_str = strdup(pipeline_str);
 		char *stripped_pipeline_str = strip(pipeline_str);
 
+		if (strcmp(stripped_pipeline_str, "") == 0)
+			break; // if last command is backgrounded, then there
+			       // is no other command to add but there is an
+			       // empty string
+
 		DYNARR_INIT(pipeline_t, pipeline);
 		char *command_str;
 		while ((command_str = strsep(&stripped_pipeline_str, "|"))) {
@@ -127,21 +132,16 @@ parse_commands(char *line)
 
 		free(pipeline_str);
 
-		apipeline_t *async_pipeline = malloc(sizeof(apipeline_t));
-		if (async_pipeline == NULL) {
-			fprintf(stderr, "couldn't create async tagged pipeline: %s\n", strerror(errno));
-			exit(EXIT_FAILURE);
-		}
-		*async_pipeline = { .p = pipeline, .async = };
+		apipeline_t async_pipeline
+		    = { .p = pipeline, .async = (stripped_line != NULL) };
 
 		dynarr_append(async_pipeline_list, async_pipeline);
-
 	}
 	return async_pipeline_list;
 }
 
 void
-run_commands(pipeline_t *cmds, bool background, bool display_commands)
+run_commands(asynclist_t *asynclist, bool display_commands)
 {
 	// 1. create all n-1 pipes
 	// 2. for each command, fork
@@ -151,11 +151,17 @@ run_commands(pipeline_t *cmds, bool background, bool display_commands)
 	// 6a. exec
 	// 3b. in parent, close all pipe ends
 	// 4b. wait for children
-	// 5b. wait for background jobs
 
-	if (cmds == NULL) { return; }
+	if (asynclist == NULL) { return; }
 
-	if (display_commands) display_pipeline(cmds);
+	if (display_commands)
+		for (int i = 0; i < asynclist->size; ++i)
+			display_pipeline(*asynclist->data[i].p);
+
+	// I'm only going to deal with one async command for now
+	apipeline_t async_pipeline = asynclist->data[0];
+	bool async = async_pipeline.async;
+	pipeline_t *cmds = async_pipeline.p;
 
 	DYNARR_INIT(pipes_t, pipes);
 	for (int i = 0; i < cmds->size - 1; ++i) {
@@ -178,7 +184,10 @@ run_commands(pipeline_t *cmds, bool background, bool display_commands)
 			exit(EXIT_FAILURE);
 		}
 		else if (pid > 0) { // parent
-			dynarr_append(cpids, pid);
+			if (async)
+				dynarr_append(shell_state.background_jobs,
+					      pid);
+			else dynarr_append(cpids, pid);
 			continue;
 		}
 
@@ -293,16 +302,23 @@ run_commands(pipeline_t *cmds, bool background, bool display_commands)
 
 		shell_state.last_exit_status = (char) WEXITSTATUS(status);
 	}
+}
 
+void
+check_background_jobs()
+{
 	// check for background processes by waiting, but don't hang
-	for (int i = 0; i < shell_state.background_jobs.size; ++i) {
-		pid_t waiting_for = shell_state.background_jobs.data[i];
+	int status;
+	int i = 0;
+	while (i < shell_state.background_jobs->size) {
+		pid_t waiting_for = shell_state.background_jobs->data[i];
 		pid_t got_it = waitpid(waiting_for, &status, WNOHANG);
 		if (got_it == waiting_for) {
-			printf("[%d] pid %d finished", i+1, got_it);
+			printf("[%d] pid %d finished\n", i + 1, got_it);
+			dynarr_pop(shell_state.background_jobs, i);
 		}
+		else ++i;
 	}
-
 }
 
 void
@@ -351,6 +367,8 @@ main(int argc, char **argv)
 
 	shell_state.display_cmds = x_flag;
 	shell_state.current_pid = getpid();
+	DYNARR_INIT(pids_t, background_jobs);
+	shell_state.background_jobs = background_jobs;
 
 	struct sigaction action = { .sa_handler = sighandler };
 	sigaction(SIGINT, &action, NULL); // TODO: Check return
@@ -358,8 +376,9 @@ main(int argc, char **argv)
 	sigaction(SIGTSTP, &action, NULL);
 
 	if (c_flag) {
-		pipeline_t *pipeline = parse_commands(c_flag_script);
-		run_commands(pipeline, shell_state.display_cmds);
+		asynclist_t *asynclist = parse_commands(c_flag_script);
+		run_commands(asynclist, shell_state.display_cmds);
+		check_background_jobs();
 		return 0;
 	}
 
@@ -379,9 +398,9 @@ main(int argc, char **argv)
 			}
 			break;
 		}
-		pipeline_t *pipeline = parse_commands(line);
-		run_commands(pipeline, shell_state.display_cmds);
-
+		asynclist_t *asynclist = parse_commands(line);
+		run_commands(asynclist, shell_state.display_cmds);
+		check_background_jobs();
 		free(line);
 	}
 	return 0;
