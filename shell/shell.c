@@ -12,44 +12,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#include "dynarr.h"
+#include "builtins.h"
 
-// https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_09_02
-
-// create command struct
-DYNARR(command_t, char *);
-
-// create pipeline of commands
-DYNARR(pipeline_t, command_t *);
-
-// not implementing AND-OR list
-
-// async tagged pipeline
-typedef struct {
-	pipeline_t *p;
-	bool async;
-} apipeline_t;
-
-// create async list of async tagged pipelines
-DYNARR(asynclist_t, apipeline_t);
-
-// dynamic array for the n-1 pipes
-DYNARR(pipes_t, int *);
-#define READ_END 0
-#define WRITE_END 1
-
-// dynamic array for child pids and background pids.
-DYNARR(pids_t, pid_t);
-
-#define PROMPT "sish$"
-
-typedef struct {
-	pids_t *background_jobs;
-	pid_t current_pid;
-	char last_exit_status;
-	bool display_cmds;
-} shell_state_t;
-
+#include "shell.h"
 shell_state_t shell_state = { 0 };
 
 volatile sig_atomic_t interrupted = false;
@@ -158,7 +123,7 @@ run_commands(asynclist_t *asynclist, bool display_commands)
 		for (int i = 0; i < asynclist->size; ++i)
 			display_pipeline(*asynclist->data[i].p);
 
-	// I'm only going to deal with one async command for now
+	// I'm only going to deal with one async list for now
 	apipeline_t async_pipeline = asynclist->data[0];
 	bool async = async_pipeline.async;
 	pipeline_t *cmds = async_pipeline.p;
@@ -176,6 +141,19 @@ run_commands(asynclist_t *asynclist, bool display_commands)
 
 	DYNARR_INIT(pids_t, cpids);
 	for (int i = 0; i < cmds->size; ++i) {
+		// check for non-forking builtins (e.g. cd & exit)
+		command_t *cmd = cmds->data[i];
+
+		if (strcmp(cmd->data[0], "cd") == 0) {
+			int ret = cd(cmd->size, cmd->data);
+			shell_state.last_exit_status = ret;
+			continue;
+		}
+		else if (strcmp(cmd->data[0], "exit") == 0) {
+			// TODO: is more work needed here?
+			exit(EXIT_SUCCESS); // TODO: make sure to have the right exit code
+		}
+
 		// fork
 		pid_t pid = fork();
 		if (pid < 0) {
@@ -192,8 +170,6 @@ run_commands(asynclist_t *asynclist, bool display_commands)
 		}
 
 		// pid == 0 (child)
-
-		command_t *cmd = cmds->data[i];
 
 		// redirects
 		// printf("redirects\n");
@@ -276,12 +252,15 @@ run_commands(asynclist_t *asynclist, bool display_commands)
 			dup2(pipes->data[i - 1][READ_END], STDIN_FILENO);
 		}
 
-		// exec
-		// printf("exec\n");
-		// TODO: exec impl. need special cases for builtins!
-		execvp(cmd->data[0], cmd->data);
-		fprintf(stderr, "couldn't exec: %s\n", strerror(errno));
-		exit(EXIT_FAILURE);
+		// check for forking builtins (e.g. echo). no return.
+		if (strcmp(cmd->data[0], "echo") == 0) {
+			echo(cmd->size, cmd->data);
+		}
+		else { // exec
+			execvp(cmd->data[0], cmd->data);
+			fprintf(stderr, "%s: %s\n", cmd->data[0], strerror(errno));
+			exit(127);
+		}
 	}
 
 	// close all pipes in parent
