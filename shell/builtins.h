@@ -1,5 +1,7 @@
-#ifndef BUILTINS_H
-#define BUILTINS_H
-int cd(int argc, char **argv); // non-fork builtin
-void echo(int argc, char **argv); // fork builtin
-#endif // BUILTINS_H
+#ifndef _BUILTINS_H_
+#define _BUILTINS_H_
+
+int cd(int, char **);
+void echo(int, char **);
+
+#endif /* !_BUILTINS_H_ */
